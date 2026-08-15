@@ -1,0 +1,130 @@
+# Documentation rots quietly. These are the two ways it rots that a machine can
+# catch: an example profile that no longer validates, and a link to a file that
+# has been renamed.
+#
+# Shell plus GitHub's own actions. No marketplace actions, no third-party
+# scanners.
+
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, because the failure this catches is usually caused by a change in
+    # another repository rather than by a commit here.
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install "eventkit-core @ https://github.com/pu-shd/eventkit/archive/refs/tags/v0.3.0.tar.gz"
+
+      - name: Every example profile validates
+        run: |
+          fail=0
+          for profile in examples/*/event-profile.yaml; do
+            echo "==> $profile"
+            eventkit profile validate "$profile" || fail=1
+          done
+          exit $fail
+
+      - name: No example profile leaks an address into its public projection
+        run: |
+          # contact_email is public by design; nothing else may carry an address.
+          fail=0
+          for profile in examples/*/event-profile.yaml; do
+            if eventkit profile public "$profile" \
+                 | grep -v '"contact_email"' | grep -q '@'; then
+              echo "::error::$profile exposes an address in its public projection"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: No example profile holds a literal discount code
+        run: |
+          # A tier names an environment variable; it never holds the code. The
+          # validator catches this too, but the message here is clearer.
+          if grep -rnE 'discount_code_env: *[A-Z0-9]*[0-9]{2}[A-Z0-9]*$' examples/; then
+            echo "::error::discount_code_env holds something shaped like a code, not a variable name"
+            exit 1
+          fi
+          echo "OK"
+
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every relative link resolves
+        run: |
+          # Relative links only. External URLs are not checked: this job would
+          # then fail because somebody else's site was briefly down, which is
+          # how a check gets ignored.
+          fail=0
+          while IFS= read -r file; do
+            while IFS= read -r target; do
+              case "$target" in
+                http://*|https://*|mailto:*|"#"*) continue ;;
+              esac
+              clean="${target%%#*}"
+              [ -z "$clean" ] && continue
+              resolved="$(dirname "$file")/$clean"
+              if [ ! -e "$resolved" ]; then
+                echo "::error file=$file::broken link -> $target"
+                fail=1
+              fi
+            done < <(grep -oE '\]\([^)]+\)' "$file" | sed 's/^](//; s/)$//')
+          done < <(find . -name '*.md' -not -path './.git/*')
+          [ "$fail" -eq 0 ] && echo "OK: every relative link resolves."
+          exit $fail
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: The all-in-one compose file parses
+        run: |
+          cd compose
+          cp .env.example .env
+          cp ../examples/caarms-2026/event-profile.yaml event-profile.yaml
+          docker compose -f docker-compose.all.yml config >/dev/null
+          echo "OK"
+
+  scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y zsh shellcheck
+
+      - name: Scripts parse
+        run: |
+          for f in scripts/*.sh; do zsh -n "$f" || exit 1; done
+          echo "OK"
+
+      # verify-stack.sh must report a failure for a host that answers nothing.
+      # It once reported four passes against a dead host, because curl writes
+      # 000 on a connection failure *and* the fallback appended another, so the
+      # result was "000000" and matched no case arm.
+      - name: verify-stack reports a dead host as failed
+        run: |
+          if ./scripts/verify-stack.sh --url http://127.0.0.1:9 --timeout 2; then
+            echo "::error::verify-stack passed against a host that answers nothing"
+            exit 1
+          fi
+          echo "OK: a dead host fails."

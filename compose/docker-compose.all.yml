@@ -1,0 +1,97 @@
+# The whole stack on one host.
+#
+# See ../docs/ALL-IN-ONE.md before using this — particularly the part about
+# authentication, which on Azure is Easy Auth and here is entirely your reverse
+# proxy's job.
+#
+# Each application is still its own process with its own database file. That is
+# not an implementation detail to tidy up later: merging them would fork the
+# code away from upstream. This changes where things run, not how they are
+# built.
+#
+#   cp .env.example .env    # then edit
+#   docker compose -f docker-compose.all.yml up -d
+#
+# Comment out anything you are not running. You probably do not need all five —
+# see ../docs/CHOOSING-TOOLS.md.
+
+name: event-stack
+
+x-common: &common
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    # One directory, separate database files.
+    - data:/data
+    # The event profile every application reads. Keep one copy; they must agree.
+    - ./event-profile.yaml:/app/event-profile.yaml:ro
+  environment: &common-env
+    EVENT_PROFILE: /app/event-profile.yaml
+    AUTHORIZED_PRINCIPALS: ${AUTHORIZED_PRINCIPALS}
+    ENABLE_RESTORE: ${ENABLE_RESTORE:-False}
+  healthcheck:
+    test: ["CMD", "python", "-c",
+           "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 40s
+
+services:
+  ticket-reconciler:
+    <<: *common
+    image: ghcr.io/pu-shd/ticket-reconciler:latest
+    environment:
+      <<: *common-env
+      DATABASE_URL: sqlite:////data/ticket-reconciler.db
+      DRUPAL_WEBHOOK_TOKEN: ${RECONCILER_WEBHOOK_TOKEN}
+      EVENTBRITE_API_TOKEN: ${EVENTBRITE_API_TOKEN}
+      EVENTBRITE_EVENT_ID: ${EVENTBRITE_EVENT_ID}
+      EVENTBRITE_DISCOUNT_GENERAL: ${EVENTBRITE_DISCOUNT_GENERAL}
+      EVENTBRITE_DISCOUNT_AFFILIATE: ${EVENTBRITE_DISCOUNT_AFFILIATE}
+    ports: ["8001:8000"]
+
+  lodging-planner:
+    <<: *common
+    image: ghcr.io/pu-shd/lodging-planner:latest
+    environment:
+      <<: *common-env
+      DATABASE_URL: sqlite:////data/lodging-planner.db
+      DRUPAL_WEBHOOK_TOKEN: ${LODGING_WEBHOOK_TOKEN}
+    ports: ["8002:8000"]
+
+  nametag-press:
+    <<: *common
+    image: ghcr.io/pu-shd/nametag-press:latest
+    environment:
+      <<: *common-env
+      DATABASE_URL: sqlite:////data/nametag-press.db
+      DRUPAL_WEBHOOK_TOKEN: ${NAMETAG_WEBHOOK_TOKEN}
+    ports: ["8003:8000"]
+
+  poster-gallery:
+    <<: *common
+    image: ghcr.io/pu-shd/poster-gallery:latest
+    environment:
+      <<: *common-env
+      DATABASE_URL: sqlite:////data/poster-gallery.db
+      DRUPAL_WEBHOOK_TOKEN: ${GALLERY_WEBHOOK_TOKEN}
+    # The only service with a public half. Your proxy must leave `/`,
+    # `/api/presenters` and `/feed.xml` open while protecting `/admin` and
+    # `/api/admin/*`.
+    ports: ["8004:8000"]
+
+  link-forge:
+    <<: *common
+    image: ghcr.io/pu-shd/link-forge:latest
+    environment:
+      <<: *common-env
+      SPEAKER_LINK_TOKENS: ${SPEAKER_LINK_TOKENS}
+      DOCUSIGN_MEDIA_RELEASE_FORM_ID: ${DOCUSIGN_MEDIA_RELEASE_FORM_ID}
+      RECONCILER_ROSTER_URL: http://ticket-reconciler:8000
+    # Stateless: no database, nothing to back up. It still needs the volume
+    # mount only for the shared profile, which the anchor supplies.
+    ports: ["8005:8000"]
+
+volumes:
+  data:

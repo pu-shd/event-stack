@@ -1,0 +1,4 @@
+compose/.env
+compose/event-profile.yaml
+__pycache__/
+*.pyc
