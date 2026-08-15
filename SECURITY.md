@@ -10,6 +10,18 @@ it. If it involves a live deployment, say so — a token may need rotating befor
 a fix ships, and [rotating a webhook token has a gap during which submissions
 are lost](docs/SECURITY-PRIVACY.md#webhook-tokens), so the timing matters.
 
+## The rule that keeps this repository publishable
+
+No commit may add a real attendee record, a webhook token, a speaker prefill
+token, a discount code, or a real email address — to code, a fixture, a
+document or an example. Use `example.edu`, `${WEBHOOK_TOKEN}`, and
+`<your-app>.azurewebsites.net`.
+
+`drupal-event-forms` enforces this with `tools/redact.py`; the other
+repositories check the same shapes in their hygiene job. If a check blocks you
+and you think it is wrong, say so in the pull request rather than adding an
+exclusion.
+
 ## What is in scope
 
 Anything that lets someone read attendee data, write to an application without a
