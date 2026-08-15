@@ -58,6 +58,10 @@ eventkit azure deploy --event my-event-2027
 ./scripts/verify-stack.sh --event my-event-2027
 ```
 
+`scripts/whois-person.sh` finds one person across every application's backups —
+the tool that makes the documented deletion procedure something you can actually
+run.
+
 `verify-stack.sh` asks four questions of every application: does `/healthz`
 answer, is an anonymous request to an admin route refused, does a webhook with a
 bad token get rejected, and does any public JSON contain an email address. It is

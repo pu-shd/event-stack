@@ -149,9 +149,20 @@ This is the price of the architecture and it is not hidden.
 
 `link-forge` holds nothing, which is exactly why it holds nothing.
 
-`eventkit`'s `person_key` makes step 1–4 a lookup rather than a search, and each
-application has an `identity-drift` command for checking a population against
-another application's backup. Budget an hour and write down what you did.
+`scripts/whois-person.sh` makes this executable rather than aspirational:
+
+```sh
+./scripts/whois-person.sh --email someone@example.edu backups/*.json
+```
+
+It reads backup exports rather than live databases — no credentials, no network,
+and it keeps working after an application has been torn down and only its final
+backup survives. It reports two different things, and the distinction matters:
+the person's **own records**, and places where they are **named inside somebody
+else's record** — a roommate request holds another person's name, and that does
+not disappear when the named person's own row is deleted.
+
+Budget an hour and write down what you did.
 
 ---
 
