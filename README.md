@@ -4,113 +4,104 @@ A reusable stack for running an academic conference: registration through
 Drupal, tickets reconciled against Eventbrite, rooms assigned, badges printed,
 posters published, per-person links issued.
 
-It was extracted from two repositories that ran a real conference and were
-edited live as its needs changed. This is that system, generalized, with the
-bugs it shipped with written down rather than quietly fixed.
-
 **You probably do not need all of it.** Start at
-[CHOOSING-TOOLS.md](docs/CHOOSING-TOOLS.md).
+[CHOOSING-TOOLS](docs/CHOOSING-TOOLS.md).
 
----
-
-## The repositories
-
-| | |
-|---|---|
-| [`eventkit`](https://github.com/pu-shd/eventkit) | The shared library — Drupal parser, identity, auth, backup, migrations, UI kit — plus `eventkit azure`, the deployment toolkit |
-| [`drupal-event-forms`](https://github.com/pu-shd/drupal-event-forms) | Webform exports, Remote Post recipes, the receipt email, field-map contracts |
-| [`ticket-reconciler`](https://github.com/pu-shd/ticket-reconciler) | Drupal↔Eventbrite reconciliation, front-desk check-in, swag, waivers |
-| [`lodging-planner`](https://github.com/pu-shd/lodging-planner) | Rooms, a drag-and-drop board, an advisory rules engine |
-| [`nametag-press`](https://github.com/pu-shd/nametag-press) | Avery badge PDFs |
-| [`link-forge`](https://github.com/pu-shd/link-forge) | Prefilled per-person links. Stateless |
-| [`poster-gallery`](https://github.com/pu-shd/poster-gallery) | Public poster directory and RSS |
-
-## Start here
-
-| | |
-|---|---|
-| [CHOOSING-TOOLS.md](docs/CHOOSING-TOOLS.md) | Which of these you actually need. Read first |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it fits together, with diagrams |
-| [RUNBOOK.md](docs/RUNBOOK.md) | What staff did, week by week, with a check per phase |
-| [SECURITY-PRIVACY.md](docs/SECURITY-PRIVACY.md) | What is collected, who can reach it, how long it lives |
-| [EVENT-PROFILE-SPEC.md](docs/EVENT-PROFILE-SPEC.md) | The one YAML every application reads |
-| [COMPATIBILITY.md](docs/COMPATIBILITY.md) | Known-good version sets |
-| [ALL-IN-ONE.md](docs/ALL-IN-ONE.md) | One container instead of five |
-| [ADR/](docs/ADR/) | Eight decisions, so they are not re-litigated |
-
-## Roughly thirty minutes to a working stack
+## Thirty minutes to a working stack
 
 ```zsh
-# 1. Write the event profile. Change every value.
+# 1. Write the event profile. Change every value in it.
 cp examples/caarms-2026/event-profile.yaml event-profile.yaml
 eventkit profile validate event-profile.yaml
 
-# 2. Deploy each application you need. Idempotent and resumable; it pauses at
-#    manual gates and polls until you have done them.
+# 2. Deploy what you need, one application at a time.
 cd ticket-reconciler
 eventkit azure deploy --event my-event-2027 --dry-run
 eventkit azure deploy --event my-event-2027
 
-# 3. Import the form, add one Remote Post handler per application.
-#    https://github.com/pu-shd/drupal-event-forms/blob/main/docs/IMPORT.md
+# 3. Import the Drupal form; add one Remote Post handler per application.
+#    https://github.com/pu-shd/drupal-event-forms
 
 # 4. Check it.
 ./scripts/verify-stack.sh --event my-event-2027
 ```
 
-`scripts/whois-person.sh` finds one person across every application's backups —
-the tool that makes the documented deletion procedure something you can actually
-run.
+Deployment is idempotent and resumable. It pauses at steps it cannot do for you —
+the Entra identity provider, a DNS record, an Eventbrite token — and polls until
+you have done them.
 
-`verify-stack.sh` asks four questions of every application: does `/healthz`
-answer, is an anonymous request to an admin route refused, does a webhook with a
-bad token get rejected, and does any public JSON contain an email address. It is
-read-only, so it is safe against production — which is the only place worth
-running it.
+## The repositories
 
-## What holds it together
+| | |
+|---|---|
+| [`eventkit`](https://github.com/pu-shd/eventkit) | Shared library and the `eventkit azure` deployment toolkit |
+| [`drupal-event-forms`](https://github.com/pu-shd/drupal-event-forms) | Webform exports, handler recipes, field-map contracts |
+| [`ticket-reconciler`](https://github.com/pu-shd/ticket-reconciler) | Eventbrite reconciliation, check-in, swag, waivers |
+| [`lodging-planner`](https://github.com/pu-shd/lodging-planner) | Rooms, assignment board, rules engine |
+| [`nametag-press`](https://github.com/pu-shd/nametag-press) | Avery badge PDFs |
+| [`link-forge`](https://github.com/pu-shd/link-forge) | Prefilled per-person links. Stateless |
+| [`poster-gallery`](https://github.com/pu-shd/poster-gallery) | Public poster directory and RSS |
 
-`eventkit` is a **library, not a service**. No shared runtime, no shared
-database, nothing to deploy centrally. It carries only what must agree across
-applications: one Drupal parser, one identity function, one auth dependency, one
-backup format.
+## Documentation
 
-Each application owns its database and registers its own Remote Post handler
-with its own token. None depends on another at runtime — one being down cannot
-stop a registration.
+| | |
+|---|---|
+| [CHOOSING-TOOLS](docs/CHOOSING-TOOLS.md) | Which applications you need |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | How it fits together |
+| [RUNBOOK](docs/RUNBOOK.md) | Week by week, with a check per phase |
+| [SECURITY-PRIVACY](docs/SECURITY-PRIVACY.md) | What is collected, who reaches it, how long it lives |
+| [EVENT-PROFILE-SPEC](docs/EVENT-PROFILE-SPEC.md) | The one YAML every application reads |
+| [COMPATIBILITY](docs/COMPATIBILITY.md) | Known-good version sets |
+| [ALL-IN-ONE](docs/ALL-IN-ONE.md) | One container instead of five |
+| [DECISIONS](docs/DECISIONS.md) | Why it is shaped this way |
 
-### The cost of independent databases
+## Scripts
 
-Stated here rather than discovered later: **the same person is a row in up to
-four databases, and a deletion request is a pass over all of them** plus Drupal
-plus the backups. Roommate references live in other people's rows. There is no
-cascade and there will not be one, because a cascade across service boundaries
-is the coupling the design exists to avoid.
+```zsh
+./scripts/verify-stack.sh --event my-event-2027
+```
 
-The related cost: a write-in added at the lodging board on the day does not
-appear in `nametag-press`. Print spares.
+Asks four read-only questions of every application: does `/healthz` answer, is
+an anonymous request to an admin route refused, does a webhook with a bad token
+get rejected, does any public JSON contain an email address.
 
-See [ADR 0001](docs/ADR/0001-independent-databases.md) for why this trade was
-made anyway.
+```zsh
+./scripts/whois-person.sh --email someone@example.edu backups/*.json
+```
+
+Finds one person across every application's backups, separating their own
+records from places where they are named in somebody else's — which is what
+makes a deletion request executable.
+
+## How it fits together
+
+One Drupal webform is the only place a registrant types anything. Each
+application subscribes to it independently with its own Remote Post handler and
+its own token, and keeps its own database. None depends on another at runtime,
+so one being down cannot stop a registration.
+
+`eventkit` is a library, not a service: no shared runtime, nothing to deploy
+centrally. It carries only what must agree — one parser, one identity function,
+one auth dependency, one backup format.
+
+**The cost:** the same person is a row in up to four databases, so a deletion
+request is a pass over all of them plus Drupal plus the backups, and a write-in
+added in one application does not appear in another. See
+[DECISIONS](docs/DECISIONS.md).
 
 ## Prerequisites
 
 - **Drupal 10** with the Webform suite, including `webform_computed_twig` —
-  which ships with it and is **not enabled by default**, and whose absence makes
-  conditional ticketing fail silently in the direction of "everyone is exempt".
-- **An Eventbrite team with API access**, only if you are selling tickets.
-- **Azure**, if you want `eventkit azure` to do the deployment. Otherwise
-  [one container](docs/ALL-IN-ONE.md) on any host.
-
-Nothing else. No Kubernetes, no message broker, no bundler, no third-party CI
-services.
+  which ships with it, is **not enabled by default**, and whose absence makes
+  conditional ticketing fail silently toward "everyone is exempt".
+- **An Eventbrite team with API access**, only if you sell tickets.
+- **Azure**, or [one container](docs/ALL-IN-ONE.md) on any host.
 
 ## The reference event
 
 [`examples/caarms-2026/`](examples/caarms-2026/) is a real conference's profile,
-sanitized: the most complicated event this stack has run, with conditional
-ticketing across five tiers, special lodging rules, and swag. It is a worked
-example to read, not a template to run — change every value.
+sanitized: conditional ticketing across five tiers, lodging rules, swag. Read it
+as a worked example; change every value.
 
 ## Licence
 

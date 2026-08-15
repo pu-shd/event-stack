@@ -2,19 +2,11 @@
 
 ## You do not need all five
 
-Most events need one or two. The stack is five repositories because the five
-jobs have different audiences, different lifetimes and different sensitivity —
-not because an event is supposed to run all of them.
+Most events need one or two. Each application you run is money, a thing to
+patch, a database of personal data you did not have to collect, and a deletion
+request to service later.
 
-Running an application you do not need costs money, adds a thing to patch, adds
-a database holding personal data you did not have to collect, and adds a
-deletion request you will have to service later.
-
-Start from what you are actually doing.
-
----
-
-## The question tree
+## Which do I need?
 
 **Are you selling tickets, or is any part of attendance conditional on payment
 or exemption?**
@@ -99,12 +91,8 @@ Only `ticket-reconciler` needs Eventbrite. Only `lodging-planner` and
 
 ## Adding one later
 
-Applications do not depend on each other at runtime. Each registers its own
-Remote Post handler on the same webform with its own token, and each keeps its
-own database.
-
-So adding `nametag-press` three weeks in is: deploy it, add a handler, and
-import the registrations that arrived before it existed —
+Applications do not depend on each other. Adding `nametag-press` three weeks in
+is: deploy it, add a handler, and import what arrived before it existed —
 
 ```sh
 python -m nametag_press.cli import <backup-from-another-app.json>
@@ -112,6 +100,4 @@ python -m nametag_press.cli import <backup-from-another-app.json>
 
 — because every application reads the same unified backup format.
 
-The cost of that independence is that a write-in added in one application does
-not appear in another. That is a real limitation and it is
-[documented, not hidden](../README.md#the-cost-of-independent-databases).
+The cost: a write-in added in one application does not appear in another.
